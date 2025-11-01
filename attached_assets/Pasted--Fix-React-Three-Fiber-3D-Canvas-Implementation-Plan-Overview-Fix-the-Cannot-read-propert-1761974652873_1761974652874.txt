@@ -1,0 +1,442 @@
+# Fix React Three Fiber 3D Canvas Implementation Plan
+
+## Overview
+
+Fix the "Cannot read properties of undefined (reading 'S')" error preventing the 3D canvas from loading, then enable the canvas to display properly in the hero section.
+
+## Current State Analysis
+
+**Repo: ink-to-glow**
+
+**Dependencies installed:**
+
+- @react-three/fiber: v8.18.0
+- @react-three/drei: v9.122.0
+- three: v0.169.0
+- react: v18.3.1
+- Missing: react-reconciler (peer dependency, not explicitly installed)
+
+**Vite Config (vite.config.ts):**
+
+- Currently includes three.js in optimizeDeps (line 19)
+- This is causing the reconciler resolution issue
+
+**Component Status:**
+
+- Car3DCanvas.tsx: Exists with placeholder box geometry
+- HeroSection.tsx line 12: show3D state is hardcoded to false
+- Canvas is lazy-loaded but never enabled
+
+**Current Error:**
+
+- TypeError: Cannot read properties of undefined (reading 'S')
+- Happens when React Three Fiber tries to initialize react-reconciler
+- This is a known Vite + React Three Fiber + React 18.3 compatibility issue
+
+## Desired End State
+
+- 3D canvas loads without errors
+- Placeholder box displays and rotates in hero section
+- User can interact with 3D scene (orbit controls work)
+- Ready for future car model replacement
+
+---
+
+## Changes Required
+
+### File: package.json
+
+**Purpose:** Add missing peer dependency to fix reconciler error
+
+**Changes:**
+
+- Add "react-reconciler" to dependencies section
+- Version should match React Three Fiber's peer dependency requirement
+- Install with: npm install react-reconciler@^0.29.2
+
+**Why this fixes the error:**
+
+- @react-three/fiber v8.18.0 expects react-reconciler as a peer dependency
+- Vite's module resolution can't find it without explicit installation
+- The 'S' property error comes from ReactSharedInternals.S being undefined
+- Adding react-reconciler ensures proper module resolution
+
+---
+
+### File: src/sections/HeroSection.tsx
+
+**Purpose:** Enable 3D canvas to display immediately on page load
+
+**Changes:**
+
+- Line 12: Change `const [show3D, setShow3D] = useState(false);` to `const [show3D, setShow3D] = useState(true);`
+
+**Result:**
+
+- 3D canvas will render immediately instead of showing fallback animation
+- Suspense fallback (pulsing circle) will display while canvas loads
+- Once loaded, interactive 3D box will be visible with orbit controls
+- Auto-rotation will be active (as configured in Car3DCanvas.tsx)
+
+---
+
+## Edge Cases & Error Handling
+
+### If react-reconciler install fails:
+
+- Check npm registry connection
+- Try with --legacy-peer-deps flag if peer dependency conflicts
+- Verify React version is 18.3.1 (already confirmed)
+
+### If error persists after adding react-reconciler:
+
+- Clear node\_modules and package-lock.json
+- Run fresh npm install
+- Clear Vite cache: rm -rf node\_modules/.vite
+- Restart dev server
+
+### Browser console errors:
+
+- If WebGL not supported: Fallback animation will continue showing (mobile Safari, old browsers)
+- If three.js fails to load: Suspense fallback remains visible
+- User will see error in console but site won't crash (lazy loading protects main app)
+
+### Performance considerations:
+
+- 3D canvas only loads on desktop (hidden on mobile via lg: breakpoint)
+- Lazy loading prevents blocking initial page load
+- Suspense ensures smooth loading experience
+
+---
+
+## Manual Testing
+
+### Test 1: Verify Error is Fixed
+
+1. Run: npm install react-reconciler@^0.29.2
+2. Restart dev server: npm run dev
+3. Open browser console
+4. Navigate to home page
+5. **Expected:** No "Cannot read properties of undefined (reading 'S')" error
+6. **Expected:** Canvas component loads without errors
+
+### Test 2: Verify 3D Canvas Displays
+
+1. Open home page on desktop viewport (1024px+ width)
+2. **Expected:** See pulsing circle loading state briefly
+3. **Expected:** 3D box appears with theme color and metallic finish
+4. **Expected:** Box auto-rotates slowly
+5. **Expected:** Backdrop glow pulses with theme color
+
+### Test 3: Verify Interactions Work
+
+1. Click and drag on 3D canvas
+2. **Expected:** Box rotates following mouse movement
+3. Scroll mouse wheel over canvas
+4. **Expected:** Camera zooms in/out (limited to 3-10 distance)
+5. Try to pan (should be disabled)
+6. **Expected:** Pan does not work (as configured)
+
+### Test 4: Verify Mobile Behavior
+
+1. Resize viewport to mobile (< 1024px width)
+2. **Expected:** 3D canvas completely hidden (display: none)
+3. **Expected:** Only fallback animation circle visible
+4. **Expected:** Text content remains visible and responsive
+
+### Test 5: Verify Theme Integration
+
+1. Change theme color (if theme switcher exists)
+2. **Expected:** Box color updates to match new theme RGB
+3. **Expected:** Point light color updates
+4. **Expected:** Backdrop glow updates
+
+---
+
+## Implementation Notes
+
+**Installation Command:**
+
+```bash
+npm install react-reconciler@^0.29.2
+```
+
+**Verification after install:**
+Check package.json shows:
+
+```json
+"dependencies": {
+  "react-reconciler": "^0.29.2",
+  ...
+}
+```
+
+**Dev server restart required:**
+
+- After installing react-reconciler, MUST restart dev server
+- Ctrl+C to stop, then npm run dev to restart
+- Vite needs to rebuild dependency cache
+
+**No Vite config changes needed:**
+
+- Current optimizeDeps configuration is correct
+- Including three, @react-three/fiber, @react-three/drei is proper approach
+- Only missing dependency was the issue
+
+---
+
+## Phase 2: Replace Placeholder Box with 3D Car Model
+
+### Overview
+
+Once React Three Fiber error is fixed, replace the colored box with actual car model while keeping box as loading fallback.
+
+---
+
+### File Structure Changes
+
+**Create directory: public/models/**
+
+- Purpose: Store 3D model files accessible via public URL
+- Place car.glb file here
+- Final path: /public/models/car.glb
+- Accessible in code as: /models/car.glb
+
+---
+
+### File: src/components/Car3DCanvas.tsx
+
+**Purpose:** Load and display 3D car model with theme color integration
+
+**Import Changes:**
+
+- Add `useGLTF` from '@react-three/drei' (already in dependencies)
+- Keep existing imports (Canvas, OrbitControls, PerspectiveCamera, Environment, Suspense)
+
+**New Component: Car3DModel**
+
+- Create new component above Car3DPlaceholder
+- Use useGLTF hook to load '/models/car.glb'
+- Access model via: `const { scene } = useGLTF('/models/car.glb')`
+- Clone the scene to avoid mutating cached model
+- Traverse all meshes in the model
+- Override all materials with MeshStandardMaterial
+- Apply theme color: `color: rgb(${themeRGB})`
+- Set metalness: 0.9 (shiny car paint look)
+- Set roughness: 0.1 (glossy finish)
+- Return primitive element with the modified scene
+
+**Component Props:**
+
+- Accepts themeRGB prop (same as placeholder)
+
+**Model Positioning:**
+
+- Rotation: Will need adjustment based on model orientation (start with [0, 0, 0])
+- Scale: Will need adjustment based on model size (start with [1, 1, 1])
+- Position: [0, -1, 0] to center car on ground plane
+
+**Error Handling:**
+
+- Wrap Car3DModel in try-catch during render
+- If model fails to load: useGLTF will throw error
+- Suspense will catch this and show Car3DPlaceholder instead
+- Console error will display but won't crash app
+
+**Update Main Canvas Component:**
+
+- Replace line 34: `<Car3DPlaceholder themeRGB={currentThemeRGB} />`
+- Change to: `<Car3DModel themeRGB={currentThemeRGB} />`
+- Keep Car3DPlaceholder as Suspense fallback
+- Fallback prop: `fallback={<Car3DPlaceholder themeRGB={currentThemeRGB} />}`
+
+**Lighting Adjustments:**
+
+- Keep existing lighting setup (works for both box and car)
+- Ambient light: 0.5 intensity
+- Two spotlights for directional highlights
+- Point light with theme color for accent
+
+**Camera Position:**
+
+- May need adjustment after seeing actual car model
+- Current position: [5, 2, 5] with fov 50
+- If car is too close/far, adjust camera position or model scale
+- Keep OrbitControls limits: minDistance 3, maxDistance 10
+
+---
+
+### File: src/components/Car3DCanvas.tsx (complete specification)
+
+**Implementation Flow:**
+
+1. Component renders Canvas
+2. Suspense wraps Car3DModel
+3. useGLTF starts loading /models/car.glb
+4. While loading: Car3DPlaceholder displays (colored box)
+5. On success: Car3DModel displays with theme color applied
+6. On error: Car3DPlaceholder continues displaying
+7. User can interact with whichever model is showing
+
+**Material Override Logic:**
+
+```
+For each mesh in model.scene:
+  - Check if mesh has material
+  - Replace material with new MeshStandardMaterial
+  - Set color to rgb(${themeRGB})
+  - Set metalness to 0.9
+  - Set roughness to 0.1
+  - This ensures entire car matches theme color
+```
+
+**Theme Color Integration:**
+
+- Car body color: Matches current theme RGB
+- Point light color: Matches theme RGB (already implemented)
+- Result: Car glows with theme-colored accent lighting
+
+**Performance:**
+
+- Model loaded once and cached by drei's useGLTF
+- Subsequent renders use cached model
+- Only material updates on theme change (not full reload)
+
+---
+
+### Edge Cases & Troubleshooting (Phase 2)
+
+**If model appears too large/small:**
+
+- Adjust scale prop on primitive element
+- Try scale={[0.5, 0.5, 0.5]} for smaller
+- Try scale={[2, 2, 2]} for larger
+- Keep proportions equal for realistic look
+
+**If model appears upside down or rotated wrong:**
+
+- Adjust rotation prop on primitive element
+- Common fixes: [0, Math.PI, 0] or [Math.PI / 2, 0, 0]
+- May need to rotate model in 3D software if rotation is extreme
+
+**If model is not centered:**
+
+- Adjust position prop on primitive element
+- Start with [0, -1, 0] to place on ground
+- Increase/decrease Y value to move up/down
+
+**If model doesn't appear at all:**
+
+- Check browser console for loading errors
+- Verify file path is /models/car.glb (case-sensitive)
+- Verify file exists at public/models/car.glb
+- Check file permissions (must be readable)
+- Check file is valid GLB format (not corrupted)
+- Box fallback should still display
+
+**If materials look wrong:**
+
+- Some models have multiple material types (MeshPhysicalMaterial, etc.)
+- Override works for all material types
+- If transparency issues: Set material.transparent = false
+- If lighting looks flat: Verify metalness/roughness values
+
+**If performance is poor:**
+
+- Check model polygon count (< 100k triangles recommended)
+- Large models may cause lag on mobile
+- Consider using lower-poly version for web
+- Desktop should handle most models fine
+
+---
+
+## Manual Testing (Phase 2)
+
+### Test 6: Verify Model Loading
+
+1. Place car.glb in public/models/ directory
+2. Restart dev server (may need to clear cache)
+3. Open home page on desktop viewport
+4. **Expected:** See colored box briefly (while model loads)
+5. **Expected:** Box replaced by car model smoothly
+6. **Expected:** Car has theme color applied (not original textures)
+
+### Test 7: Verify Model Interactions
+
+1. Click and drag on car model
+2. **Expected:** Car rotates smoothly following mouse
+3. **Expected:** Auto-rotation continues working
+4. Zoom in/out with mouse wheel
+5. **Expected:** Camera limits still apply (3-10 distance)
+6. **Expected:** Model details visible up close
+
+### Test 8: Verify Fallback Behavior
+
+1. Rename car.glb temporarily to break loading
+2. Refresh page
+3. **Expected:** Colored box displays (fallback activates)
+4. **Expected:** Console shows error but no crash
+5. **Expected:** Rest of page works normally
+6. Restore car.glb filename
+7. **Expected:** Car model loads again
+
+### Test 9: Verify Theme Color Override
+
+1. Load page with car model
+2. Verify car is using current theme color
+3. Change theme color (if theme switcher exists)
+4. **Expected:** Car color updates immediately to new theme
+5. **Expected:** Point light color also updates
+6. **Expected:** No flicker or reload during color change
+
+### Test 10: Verify Model Position/Scale
+
+1. View car model from multiple angles (drag to rotate)
+2. **Expected:** Car is properly centered
+3. **Expected:** Car is not clipping through ground
+4. **Expected:** Car size looks proportional to scene
+5. Zoom to minimum distance (3 units)
+6. **Expected:** Can see car details clearly
+7. Zoom to maximum distance (10 units)
+8. **Expected:** Can see full car in frame
+
+---
+
+## File Checklist
+
+**Phase 1 (Fix Error):**
+
+- ✓ package.json - Add react-reconciler
+- ✓ src/sections/HeroSection.tsx - Change show3D to true
+
+**Phase 2 (Car Model):**
+
+- ✓ public/models/ - Create directory
+- ✓ public/models/car.glb - Place model file
+- ✓ src/components/Car3DCanvas.tsx - Add Car3DModel component
+- ✓ src/components/Car3DCanvas.tsx - Update Suspense fallback
+- ✓ src/components/Car3DCanvas.tsx - Import useGLTF
+
+---
+
+## Success Criteria
+
+**Phase 1 Complete When:**
+
+- No console errors related to React Three Fiber
+- 3D canvas renders without crashes
+- Placeholder box displays and is interactive
+- Orbit controls work (drag, zoom)
+- Auto-rotation works
+- Theme color applies to box
+
+**Phase 2 Complete When:**
+
+- Car model loads and displays correctly
+- Car color matches theme color (original textures overridden)
+- Car is properly positioned/scaled/rotated
+- Fallback box works if model fails
+- Theme changes update car color in real-time
+- All interactions work (drag, zoom, auto-rotate)
+- Performance is smooth on desktop
+- No console errors or warnings
