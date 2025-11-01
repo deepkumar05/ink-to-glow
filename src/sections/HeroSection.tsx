@@ -1,25 +1,15 @@
 import { motion } from 'framer-motion';
 import { useTheme } from '@/contexts/ThemeContext';
 import ScrollIndicator from '@/components/ScrollIndicator';
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Environment } from '@react-three/drei';
-import { Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 
-const Car3DPlaceholder = () => {
-  return (
-    <mesh rotation={[0, Math.PI / 4, 0]}>
-      <boxGeometry args={[4, 1, 2]} />
-      <meshStandardMaterial 
-        color={`rgb(var(--theme-rgb))`}
-        metalness={0.9}
-        roughness={0.1}
-      />
-    </mesh>
-  );
-};
+const Car3DCanvas = lazy(() => 
+  import('@/components/Car3DCanvas').then(module => ({ default: module.Car3DCanvas }))
+);
 
 const HeroSection = () => {
   const { currentThemeRGB } = useTheme();
+  const [show3D, setShow3D] = useState(true);
 
   const scrollToGallery = () => {
     document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' });
@@ -86,7 +76,7 @@ const HeroSection = () => {
 
         {/* Center/Right: 3D Car Display */}
         <motion.div
-          className="hidden lg:block w-[800px] h-[600px]"
+          className="hidden lg:block w-[800px] h-[600px] relative"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 1, delay: 0.4 }}
@@ -99,31 +89,32 @@ const HeroSection = () => {
             transition={{ duration: 2, repeat: Infinity }}
           />
           
-          <Canvas>
-            <PerspectiveCamera makeDefault position={[5, 2, 5]} fov={50} />
-            
-            {/* Lighting */}
-            <ambientLight intensity={0.5} />
-            <spotLight position={[10, 10, 10]} intensity={1.2} angle={Math.PI / 6} />
-            <spotLight position={[-10, 5, -5]} intensity={0.6} />
-            <pointLight position={[0, -2, 0]} color={`rgb(${currentThemeRGB})`} intensity={0.8} />
-            
-            <Suspense fallback={null}>
-              <Car3DPlaceholder />
-              <Environment preset="city" />
+          {show3D ? (
+            <Suspense fallback={
+              <div className="w-full h-full flex items-center justify-center">
+                <div 
+                  className="w-32 h-32 rounded-full animate-pulse"
+                  style={{ backgroundColor: `rgba(${currentThemeRGB}, 0.3)` }}
+                />
+              </div>
+            }>
+              <Car3DCanvas currentThemeRGB={currentThemeRGB} />
             </Suspense>
-            
-            <OrbitControls
-              enableZoom={true}
-              enablePan={false}
-              enableRotate={true}
-              minDistance={3}
-              maxDistance={10}
-              dampingFactor={0.05}
-              autoRotate
-              autoRotateSpeed={0.5}
-            />
-          </Canvas>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <motion.div
+                className="w-64 h-64 rounded-full"
+                style={{ 
+                  background: `radial-gradient(circle, rgba(${currentThemeRGB}, 0.8), rgba(${currentThemeRGB}, 0.2))` 
+                }}
+                animate={{ 
+                  scale: [1, 1.2, 1],
+                  rotate: [0, 180, 360]
+                }}
+                transition={{ duration: 3, repeat: Infinity }}
+              />
+            </div>
+          )}
         </motion.div>
       </div>
 
