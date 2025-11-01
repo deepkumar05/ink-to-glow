@@ -9,7 +9,7 @@ const Car3DCanvas = lazy(() =>
 
 const HeroSection = () => {
   const { currentThemeRGB } = useTheme();
-  const [show3D, setShow3D] = useState(true);
+  const [show3D, setShow3D] = useState(false);
 
   const scrollToGallery = () => {
     document.getElementById('gallery')?.scrollIntoView({ behavior: 'smooth' });
